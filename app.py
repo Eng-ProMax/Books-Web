@@ -59,7 +59,7 @@ character_key = st.sidebar.selectbox(
 )
 st.sidebar.image(CHAR_IMAGES[character_key], width=100)
 
-default_char_name = CHAR_NAMES[character_key]["ar"].split("")[0] if AR else CHAR_NAMES[character_key]["en"].split(" ")[0]
+default_char_name = CHAR_NAMES[character_key]["ar"].split(" ")[0] if AR else CHAR_NAMES[character_key]["en"].split(" ")[0]
 char_name_label ="شنو تريد تسميها؟" if AR else"Name the Character"
 character_name = st.sidebar.text_input(char_name_label, default_char_name)
 
