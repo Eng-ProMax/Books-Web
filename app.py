@@ -9,6 +9,87 @@ import openpyxl
 from openpyxl import Workbook
 import streamlit.components.v1 as components
 
+# ============== المساعد الذكي (Claude / Gemini) ==============
+def get_secret(name):
+    try:
+        return st.secrets.get(name, "")
+    except Exception:
+        return ""
+
+def build_system_prompt(character_name, user_name, ar):
+    if ar:
+        return (
+            f"انت شخصية اسمها {character_name}، مساعد ودود ومرح جوه تطبيق ويب لسحب بيانات الكتب. "
+            f"احچي بالهجة العراقية العامية، خفيف الظل ومختصر (جملتين لثلاث كحد اقصى). "
+            f"صاحبك اسمه {user_name}. لا تستخدم اي رموز تعبيرية بالرد."
+        )
+    return (
+        f"You are a friendly, playful assistant character named {character_name} inside a book-scraper web app. "
+        f"Keep replies short (max 2-3 sentences), warm, and conversational. "
+        f"The user's name is {user_name}. Do not use emojis in your replies."
+    )
+
+def call_claude(api_key, system_prompt, history, user_msg):
+    url = "https://api.anthropic.com/v1/messages"
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    messages = [{"role": m["role"], "content": m["content"]} for m in history]
+    messages.append({"role": "user", "content": user_msg})
+    payload = {
+        "model": "claude-sonnet-4-6",
+        "max_tokens": 300,
+        "system": system_prompt,
+        "messages": messages,
+    }
+    resp = requests.post(url, headers=headers, json=payload, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    parts = [b["text"] for b in data.get("content", []) if b.get("type") == "text"]
+    return "".join(parts).strip() or "..."
+
+def call_gemini(api_key, system_prompt, history, user_msg):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+    contents = []
+    for m in history:
+        role = "user" if m["role"] == "user" else "model"
+        contents.append({"role": role, "parts": [{"text": m["content"]}]})
+    contents.append({"role": "user", "parts": [{"text": user_msg}]})
+    payload = {
+        "contents": contents,
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "generationConfig": {"maxOutputTokens": 300},
+    }
+    resp = requests.post(url, json=payload, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    candidates = data.get("candidates", [{}])
+    cand = candidates[0] if candidates else {}
+    parts = cand.get("content", {}).get("parts", [])
+    text = "".join(p.get("text", "") for p in parts).strip()
+    return text or "..."
+
+def get_ai_reply(user_msg, provider, api_key, character_name, user_name, ar, history):
+    if not api_key:
+        return ("لازم تحط API Key اول بالشريط الجانبي حتى اكدر اجاوب!" if ar
+                else "Please add an API key in the sidebar first so I can reply!")
+    system_prompt = build_system_prompt(character_name, user_name, ar)
+    try:
+        if provider.startswith("Claude"):
+            return call_claude(api_key, system_prompt, history, user_msg)
+        return call_gemini(api_key, system_prompt, history, user_msg)
+    except requests.exceptions.RequestException as e:
+        return (f"صار خطأ بالاتصال: {e}" if ar else f"Connection error: {e}")
+    except Exception as e:
+        return (f"صار خطأ: {e}" if ar else f"Error: {e}")
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "latest_ai_reply" not in st.session_state:
+    st.session_state.latest_ai_reply = ""
+
 # page config
 st.set_page_config(page_title="Book Scraper", layout="wide")
 
@@ -65,6 +146,21 @@ character_name = st.sidebar.text_input(char_name_label, default_char_name)
 
 user_name_label ="شسمك؟ (راح تصيحك بيه)" if AR else"Your Name (it'll call you this)"
 user_name = st.sidebar.text_input(user_name_label,"صديقي" if AR else"Friend")
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("المساعد الذكي" if AR else "AI Assistant")
+ai_provider = st.sidebar.selectbox(
+    "مزوّد الذكاء الاصطناعي" if AR else "AI Provider",
+    ["Claude (Anthropic)", "Gemini (Google)"]
+)
+_default_key = get_secret("ANTHROPIC_API_KEY") if ai_provider.startswith("Claude") else get_secret("GEMINI_API_KEY")
+ai_api_key = st.sidebar.text_input(
+    "API Key",
+    value=_default_key,
+    type="password",
+    help=("خزنها بامان بملف secrets.toml حتى ما تعيد كتابتها كل مرة" if AR
+          else "Store it in secrets.toml to avoid retyping it every time")
+)
 
 themes = {
 "داكن / Dark":  {"bg":"#1e1e2e","card":"#2a2a3e","accent":"#7c6af7"},
@@ -380,6 +476,7 @@ components.html(f"""
   const BUTTON_REACTIONS= {json.dumps(BUTTON_REACTIONS, ensure_ascii=False)};
   const GENERIC_REACTIONS = {json.dumps(GENERIC_REACTIONS, ensure_ascii=False)};
   const IDLE_LINES      = {json.dumps(IDLE_LINES, ensure_ascii=False)};
+  const LATEST_AI_REPLY = {json.dumps(st.session_state.latest_ai_reply, ensure_ascii=False)};
 
   const frame = window.frameElement;
   if (frame) {{
@@ -557,6 +654,15 @@ components.html(f"""
       parentWin.__mascotLastCombo = comboKey;
       setTimeout(() => say(GREETING, 4200), 400);
     }}
+
+    // ---- عرض آخر رد من المساعد الذكي بفقاعة الشخصية ----
+    if (LATEST_AI_REPLY && parentWin.__mascotLastAIReply !== LATEST_AI_REPLY) {{
+      parentWin.__mascotLastAIReply = LATEST_AI_REPLY;
+      setTimeout(() => {{
+        moveNear(window.innerWidth / 2, window.innerHeight / 2);
+        say(LATEST_AI_REPLY, 6500);
+      }}, 350);
+    }}
   }} catch (err) {{
     console.warn('mascot: could not attach to parent document', err);
   }}
@@ -566,6 +672,26 @@ components.html(f"""
 # title
 title_text ="أداة استخراج بيانات الكتب" if AR else"Book Data Scraper"
 st.markdown(f'<div class="title-bar">{title_text}</div>', unsafe_allow_html=True)
+
+# ---- chat panel ----
+st.markdown("### " + (f"دردش مع {character_name}" if AR else f"Chat with {character_name}"))
+for msg in st.session_state.chat_history:
+    with st.chat_message(msg["role"]):
+        st.write(msg["content"])
+
+chat_input_label = "اكتب رسالتك هنا..." if AR else "Type your message..."
+user_chat_msg = st.chat_input(chat_input_label)
+if user_chat_msg:
+    history_snapshot = st.session_state.chat_history[-10:]
+    with st.spinner("..."):
+        ai_reply = get_ai_reply(
+            user_chat_msg, ai_provider, ai_api_key,
+            character_name, user_name, AR, history_snapshot
+        )
+    st.session_state.chat_history.append({"role": "user", "content": user_chat_msg})
+    st.session_state.chat_history.append({"role": "assistant", "content": ai_reply})
+    st.session_state.latest_ai_reply = ai_reply
+    st.rerun()
 
 # main inputs
 col1, col2, col3_main = st.columns([2, 1, 1])
@@ -626,7 +752,7 @@ def scrape_books(base_url, max_pages):
                 price_num = float(price_text.replace("£","").replace("Â","").strip())
                 rating_word = book.p["class"][1]
                 rating_num = rating_map.get(rating_word, 0)
-                rating_stars ="" * rating_num +"" * (5 - rating_num)
+                rating_stars = "★" * rating_num + "☆" * (5 - rating_num)
                 img_tag = book.find("img")
                 img_url =""
                 if img_tag:
