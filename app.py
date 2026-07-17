@@ -280,6 +280,40 @@ components.html(f"""
     0% {{ transform: scale(0) rotate(0deg); opacity: 1; }}
     100% {{ transform: scale(1.4) rotate(90deg); opacity: 0; }}
   }}
+  @keyframes blink {{
+    0%, 92%, 100% {{ transform: scaleY(1); }}
+    94%, 98% {{ transform: scaleY(0.12); }}
+  }}
+  @keyframes mouthTalk {{
+    0%, 100% {{ transform: scaleY(0.5) scaleX(1); }}
+    50% {{ transform: scaleY(1.7) scaleX(0.85); }}
+  }}
+  @keyframes armSwingL {{
+    0%, 100% {{ transform: rotate(0deg); }}
+    50% {{ transform: rotate(20deg); }}
+  }}
+  @keyframes armSwingR {{
+    0%, 100% {{ transform: rotate(0deg); }}
+    50% {{ transform: rotate(-20deg); }}
+  }}
+  @keyframes legSwingL {{
+    0%, 100% {{ transform: translateY(0); }}
+    50% {{ transform: translateY(-7px); }}
+  }}
+  @keyframes legSwingR {{
+    0%, 100% {{ transform: translateY(-7px); }}
+    50% {{ transform: translateY(0); }}
+  }}
+  @keyframes waveArm {{
+    0%, 100% {{ transform: rotate(-8deg); }}
+    25% {{ transform: rotate(34deg); }}
+    50% {{ transform: rotate(-4deg); }}
+    75% {{ transform: rotate(34deg); }}
+  }}
+  @keyframes armsUp {{
+    0%, 100% {{ transform: rotate(0deg); }}
+    40%, 60% {{ transform: rotate(-46deg); }}
+  }}
   #mascotWrap {{
     position: fixed;
     width: 116px;
@@ -299,20 +333,61 @@ components.html(f"""
   #mascotStage.flip {{
     transform: scaleX(-1);
   }}
-  #mascotImg {{
+  #mascotPlate {{
+    position: absolute;
+    left: 50%;
+    top: 6px;
+    transform: translateX(-50%);
+    width: 108px;
+    height: 108px;
+    background: #ffffff;
+    border-radius: 50%;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.32);
+  }}
+  #mascotFigure {{
+    position: relative;
     width: 100%;
     height: 100%;
-    object-fit: contain;
-    filter: drop-shadow(0 6px 10px rgba(0,0,0,0.35));
     animation: breathe 3.4s ease-in-out infinite;
     transform-origin: center bottom;
   }}
-  #mascotImg.talking {{
-    animation: talkBounce 0.45s ease-in-out infinite;
+  #mascotFigure svg {{
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    display: block;
   }}
-  #mascotImg.hop {{
-    animation: jumpHop 0.6s cubic-bezier(.3,1.6,.5,1);
+  .fig-eye {{
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: blink 4.6s ease-in-out infinite;
   }}
+  .fig-mouth-smile {{ opacity: 1; }}
+  .fig-mouth-talk {{
+    opacity: 0;
+    transform-box: fill-box;
+    transform-origin: center;
+  }}
+  .fig-arm, .fig-leg {{
+    transform-box: fill-box;
+    transform-origin: 50% 0%;
+  }}
+  #mascotFigure.is-talking .fig-mouth-smile {{ opacity: 0; }}
+  #mascotFigure.is-talking .fig-mouth-talk {{
+    opacity: 1;
+    animation: mouthTalk 0.38s ease-in-out infinite;
+  }}
+  #mascotFigure.is-talking {{
+    animation: talkBounce 0.9s ease-in-out infinite;
+  }}
+  #mascotFigure.is-walking .fig-arm-l {{ animation: armSwingL 0.5s ease-in-out infinite; }}
+  #mascotFigure.is-walking .fig-arm-r {{ animation: armSwingR 0.5s ease-in-out infinite; }}
+  #mascotFigure.is-walking .fig-leg-l {{ animation: legSwingL 0.5s ease-in-out infinite; }}
+  #mascotFigure.is-walking .fig-leg-r {{ animation: legSwingR 0.5s ease-in-out infinite; }}
+  #mascotFigure.is-waving .fig-arm-r {{ animation: waveArm 0.6s ease-in-out 3; }}
+  #mascotFigure.hop {{ animation: jumpHop 0.6s cubic-bezier(.3,1.6,.5,1); }}
+  #mascotFigure.hop .fig-arm-l,
+  #mascotFigure.hop .fig-arm-r {{ animation: armsUp 0.6s ease-in-out; }}
   #mascotShadow {{
     position: absolute;
     bottom: -4px;
@@ -367,11 +442,12 @@ components.html(f"""
   <div id="mascotBubble" style="display:none;"></div>
   <div id="mascotStage">
     <div id="mascotShadow"></div>
-    <img id="mascotImg" src="" />
+    <div id="mascotPlate"></div>
+    <div id="mascotFigure"></div>
   </div>
 </div>
 <script>
-  const MASCOT_SRC   = {json.dumps(CHAR_IMAGES[character_key])};
+  const CHARACTER_KEY   = {json.dumps(character_key)};
   const CHARACTER_NAME  = {json.dumps(character_name)};
   const USER_NAME       = {json.dumps(user_name)};
   const IS_AR           = {json.dumps(AR)};
@@ -394,12 +470,74 @@ components.html(f"""
     frame.style.background ='transparent';
   }}
 
-  const wrap   = document.getElementById('mascotWrap');
-  const stage  = document.getElementById('mascotStage');
-  const img    = document.getElementById('mascotImg');
-  const bubble = document.getElementById('mascotBubble');
-  img.src = MASCOT_SRC;
+  const wrap    = document.getElementById('mascotWrap');
+  const stage   = document.getElementById('mascotStage');
+  const figure  = document.getElementById('mascotFigure');
+  const bubble  = document.getElementById('mascotBubble');
   bubble.style.direction = IS_AR ? 'rtl' : 'ltr';
+
+  const CHAR_STYLE = {{
+    banana:   {{ hood:'#f0dd58', hrx:46, hry:74, hcy:78,  accent:'banana' }},
+    shark:    {{ hood:'#a9d8e8', hrx:58, hry:66, hcy:82,  accent:'shark' }},
+    duck:     {{ hood:'#f7d774', hrx:58, hry:64, hcy:86,  accent:'duck' }},
+    robot:    {{ hood:'#dbeefb', hrx:58, hry:64, hcy:82,  accent:'robot' }},
+    pochacco: {{ hood:'#fff6e9', hrx:54, hry:62, hcy:84,  accent:'pochacco' }},
+    frog:     {{ hood:'#8fbf6a', hrx:58, hry:64, hcy:80,  accent:'frog' }}
+  }};
+
+  function buildAccessory(accent) {{
+    switch (accent) {{
+      case'banana':
+        return '<rect x="93" y="4" width="14" height="24" rx="6" fill="#6b4a2b" transform="rotate(-8 100 16)"/>';
+      case'shark':
+        return '<path d="M90,8 L100,-16 L112,8 Z" fill="#7fbfd9"/>' +
+               '<path d="M76,120 L84,130 L92,120 Z" fill="#ffffff"/>' +
+               '<path d="M96,122 L104,132 L112,122 Z" fill="#ffffff"/>' +
+               '<path d="M116,120 L124,130 L132,120 Z" fill="#ffffff"/>';
+      case'duck':
+        return '<path d="M78,110 Q100,126 122,110 Q100,134 78,110 Z" fill="#ef9d2d"/>';
+      case'robot':
+        return '<line x1="100" y1="2" x2="100" y2="-20" stroke="#a9b7c3" stroke-width="4"/>' +
+               '<circle cx="100" cy="-24" r="7" fill="#dbeefb" stroke="#a9b7c3" stroke-width="3"/>' +
+               '<rect x="72" y="150" width="56" height="12" rx="6" fill="#c7e4f5"/>';
+      case'pochacco':
+        return '<path d="M136,18 Q166,-32 150,68 Q134,58 126,28 Z" fill="#2b2b2b"/>' +
+               '<path d="M64,24 Q48,2 60,42 Q70,38 72,26 Z" fill="#2b2b2b"/>';
+      case'frog':
+        return '<circle cx="66" cy="22" r="16" fill="#a7d68a" stroke="#5f9048" stroke-width="3"/>' +
+               '<circle cx="134" cy="22" r="16" fill="#a7d68a" stroke="#5f9048" stroke-width="3"/>' +
+               '<circle cx="66" cy="22" r="5" fill="#2b2b2b"/>' +
+               '<circle cx="134" cy="22" r="5" fill="#2b2b2b"/>';
+      default:
+        return'';
+    }}
+  }}
+
+  function renderFigureSVG(key) {{
+    const st = CHAR_STYLE[key] || CHAR_STYLE.banana;
+    const accessory = buildAccessory(st.accent);
+    return (
+      '<svg viewBox="-20 -40 240 260" xmlns="http://www.w3.org/2000/svg">' +
+      '<ellipse cx="100" cy="205" rx="46" ry="8" fill="rgba(0,0,0,0.10)"/>' +
+      '<g class="fig-leg fig-leg-l"><ellipse cx="78" cy="186" rx="18" ry="14" fill="#ede7da" stroke="#c9c0ac" stroke-width="2"/></g>' +
+      '<g class="fig-leg fig-leg-r"><ellipse cx="122" cy="186" rx="18" ry="14" fill="#ede7da" stroke="#c9c0ac" stroke-width="2"/></g>' +
+      '<g class="fig-arm fig-arm-l"><ellipse cx="34" cy="128" rx="18" ry="26" fill="#ede7da" stroke="#c9c0ac" stroke-width="2"/></g>' +
+      '<g class="fig-arm fig-arm-r"><ellipse cx="166" cy="128" rx="18" ry="26" fill="#ede7da" stroke="#c9c0ac" stroke-width="2"/></g>' +
+      '<ellipse cx="100" cy="140" rx="62" ry="58" fill="#ede7da" stroke="#c9c0ac" stroke-width="2"/>' +
+      '<ellipse cx="100" cy="'+ st.hcy +'" rx="'+ st.hrx +'" ry="'+ st.hry +'" fill="'+ st.hood +'" stroke="rgba(0,0,0,0.15)" stroke-width="2"/>' +
+      accessory +
+      '<ellipse cx="100" cy="92" rx="52" ry="50" fill="#fffaf1" stroke="rgba(0,0,0,0.08)" stroke-width="2"/>' +
+      '<ellipse cx="66" cy="104" rx="12" ry="9" fill="#f9b8b0" opacity="0.75"/>' +
+      '<ellipse cx="134" cy="104" rx="12" ry="9" fill="#f9b8b0" opacity="0.75"/>' +
+      '<g class="fig-eye"><ellipse cx="78" cy="88" rx="8" ry="10" fill="#2b2b2b"/><circle cx="81" cy="84" r="2.4" fill="#fff"/></g>' +
+      '<g class="fig-eye"><ellipse cx="122" cy="88" rx="8" ry="10" fill="#2b2b2b"/><circle cx="125" cy="84" r="2.4" fill="#fff"/></g>' +
+      '<path class="fig-mouth-smile" d="M90,108 Q100,114 110,108" stroke="#8a5a45" stroke-width="3" fill="none" stroke-linecap="round"/>' +
+      '<ellipse class="fig-mouth-talk" cx="100" cy="110" rx="9" ry="6" fill="#7a4632"/>' +
+      '</svg>'
+    );
+  }}
+
+  figure.innerHTML = renderFigureSVG(CHARACTER_KEY);
 
   let pos = {{ x: window.innerWidth - 160, y: window.innerHeight - 200 }};
   wrap.style.left = pos.x +'px';
@@ -411,10 +549,10 @@ components.html(f"""
     clearTimeout(hideBubbleTimer);
     bubble.textContent = text;
     bubble.style.display ='block';
-    img.classList.add('talking');
+    figure.classList.add('is-talking');
     hideBubbleTimer = setTimeout(() => {{
       bubble.style.display ='none';
-      img.classList.remove('talking');
+      figure.classList.remove('is-talking');
     }}, duration || 3200);
   }}
 
@@ -433,11 +571,18 @@ components.html(f"""
   }}
 
   function hop() {{
-    img.classList.remove('hop');
-    void img.offsetWidth;
-    img.classList.add('hop');
+    figure.classList.remove('hop');
+    void figure.offsetWidth;
+    figure.classList.add('hop');
     burstSparkles(5);
-    setTimeout(() => img.classList.remove('hop'), 650);
+    setTimeout(() => figure.classList.remove('hop'), 650);
+  }}
+
+  let walkTimer = null;
+  function walkFor(ms) {{
+    figure.classList.add('is-walking');
+    clearTimeout(walkTimer);
+    walkTimer = setTimeout(() => figure.classList.remove('is-walking'), ms);
   }}
 
   function faceTowards(newX) {{
@@ -455,7 +600,8 @@ components.html(f"""
     pos = {{ x: tx, y: ty }};
     wrap.style.left = pos.x +'px';
     wrap.style.top  = pos.y +'px';
-    hop();
+    walkFor(850);
+    setTimeout(hop, 820);
   }}
 
   function randomPoint() {{
@@ -476,7 +622,8 @@ components.html(f"""
     pos = p;
     wrap.style.left = p.x +'px';
     wrap.style.top  = p.y +'px';
-    hop();
+    walkFor(850);
+    setTimeout(hop, 820);
     if (Math.random() < 0.6) {{
       say(pick(IDLE_LINES), 3500);
     }}
@@ -552,10 +699,14 @@ components.html(f"""
     parentWin.document.addEventListener('mousedown', parentWin.__mascotMouseHandler, true);
 
     // ترحيب مرة وحدة لكل مجموعة (شخصية + اسمها + اسم المستخدم)
-    const comboKey = MASCOT_SRC.slice(0, 40) +'|' + CHARACTER_NAME +'|' + USER_NAME;
+    const comboKey = CHARACTER_KEY +'|' + CHARACTER_NAME +'|' + USER_NAME;
     if (parentWin.__mascotLastCombo !== comboKey) {{
       parentWin.__mascotLastCombo = comboKey;
-      setTimeout(() => say(GREETING, 4200), 400);
+      setTimeout(() => {{
+        figure.classList.add('is-waving');
+        say(GREETING, 4200);
+        setTimeout(() => figure.classList.remove('is-waving'), 1900);
+      }}, 400);
     }}
   }} catch (err) {{
     console.warn('mascot: could not attach to parent document', err);
@@ -626,7 +777,7 @@ def scrape_books(base_url, max_pages):
                 price_num = float(price_text.replace("£","").replace("Â","").strip())
                 rating_word = book.p["class"][1]
                 rating_num = rating_map.get(rating_word, 0)
-                rating_stars ="" * rating_num +"" * (5 - rating_num)
+                rating_stars = "★" * rating_num + "☆" * (5 - rating_num)
                 img_tag = book.find("img")
                 img_url =""
                 if img_tag:
