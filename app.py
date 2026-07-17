@@ -154,13 +154,16 @@ ai_provider = st.sidebar.selectbox(
     ["Claude (Anthropic)", "Gemini (Google)"]
 )
 _default_key = get_secret("ANTHROPIC_API_KEY") if ai_provider.startswith("Claude") else get_secret("GEMINI_API_KEY")
-ai_api_key = st.sidebar.text_input(
-    "API Key",
-    value=_default_key,
-    type="password",
-    help=("خزنها بامان بملف secrets.toml حتى ما تعيد كتابتها كل مرة" if AR
-          else "Store it in secrets.toml to avoid retyping it every time")
-)
+if _default_key:
+    ai_api_key = _default_key
+    st.sidebar.caption("تم العثور على المفتاح بامان من secrets" if AR else "Key found securely in secrets")
+else:
+    ai_api_key = st.sidebar.text_input(
+        "API Key",
+        type="password",
+        help=("خزنها بامان بملف secrets.toml حتى ما تعيد كتابتها كل مرة" if AR
+              else "Store it in secrets.toml to avoid retyping it every time")
+    )
 
 themes = {
 "داكن / Dark":  {"bg":"#1e1e2e","card":"#2a2a3e","accent":"#7c6af7"},
