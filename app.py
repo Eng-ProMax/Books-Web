@@ -30,25 +30,27 @@ def build_system_prompt(character_name, user_name, ar):
     )
 
 def call_claude(api_key, system_prompt, history, user_msg):
-    url = "https://api.anthropic.com/v1/messages"
+    # يمر عبر OpenRouter (متوافق مع OpenAI)، مو Anthropic مباشرة
+    url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
     }
-    messages = [{"role": m["role"], "content": m["content"]} for m in history]
+    messages = [{"role": "system", "content": system_prompt}]
+    messages += [{"role": m["role"], "content": m["content"]} for m in history]
     messages.append({"role": "user", "content": user_msg})
     payload = {
-        "model": "claude-sonnet-4-6",
-        "max_tokens": 300,
-        "system": system_prompt,
+        "model": "anthropic/claude-sonnet-4.5",
         "messages": messages,
+        "max_tokens": 300,
     }
     resp = requests.post(url, headers=headers, json=payload, timeout=30)
     resp.raise_for_status()
     data = resp.json()
-    parts = [b["text"] for b in data.get("content", []) if b.get("type") == "text"]
-    return "".join(parts).strip() or "..."
+    choices = data.get("choices", [])
+    msg = choices[0].get("message", {}) if choices else {}
+    text = (msg.get("content") or "").strip()
+    return text or "..."
 
 def call_gemini(api_key, system_prompt, history, user_msg):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
@@ -151,7 +153,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("المساعد الذكي" if AR else "AI Assistant")
 ai_provider = st.sidebar.selectbox(
     "مزوّد الذكاء الاصطناعي" if AR else "AI Provider",
-    ["Claude (Anthropic)", "Gemini (Google)"]
+    ["Claude (via OpenRouter)", "Gemini (Google)"]
 )
 _default_key = get_secret("ANTHROPIC_API_KEY") if ai_provider.startswith("Claude") else get_secret("GEMINI_API_KEY")
 if _default_key:
@@ -161,8 +163,8 @@ else:
     ai_api_key = st.sidebar.text_input(
         "API Key",
         type="password",
-        help=("خزنها بامان بملف secrets.toml حتى ما تعيد كتابتها كل مرة" if AR
-              else "Store it in secrets.toml to avoid retyping it every time")
+        help=("لو Claude، حط مفتاح OpenRouter (يبدأ sk-or-). خزنه بملف secrets.toml حتى ما تعيد كتابته." if AR
+              else "For Claude, use your OpenRouter key (starts with sk-or-). Store it in secrets.toml to avoid retyping it.")
     )
 
 themes = {
