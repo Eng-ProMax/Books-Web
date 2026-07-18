@@ -65,7 +65,12 @@ def call_gemini(api_key, system_prompt, history, user_msg):
         "generationConfig": {"maxOutputTokens": 300},
     }
     resp = requests.post(url, json=payload, timeout=30)
-    resp.raise_for_status()
+    if resp.status_code >= 400:
+        try:
+            err_detail = resp.json().get("error", {}).get("message", resp.text)
+        except Exception:
+            err_detail = resp.text
+        raise RuntimeError(f"Gemini {resp.status_code}: {err_detail}")
     data = resp.json()
     candidates = data.get("candidates", [{}])
     cand = candidates[0] if candidates else {}
