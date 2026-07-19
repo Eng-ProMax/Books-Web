@@ -53,7 +53,13 @@ def call_claude(api_key, system_prompt, history, user_msg):
     return text or "..."
 
 def call_gemini(api_key, system_prompt, history, user_msg):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+    # المفاتيح الجديدة (تبدي بـ AQ.) لازم ترسل بترويسة x-goog-api-key
+    # مو كباراميتر بالرابط زي المفاتيح القديمة (AIza...)
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    headers = {
+        "x-goog-api-key": api_key,
+        "Content-Type": "application/json",
+    }
     contents = []
     for m in history:
         role = "user" if m["role"] == "user" else "model"
@@ -64,7 +70,7 @@ def call_gemini(api_key, system_prompt, history, user_msg):
         "systemInstruction": {"parts": [{"text": system_prompt}]},
         "generationConfig": {"maxOutputTokens": 300},
     }
-    resp = requests.post(url, json=payload, timeout=30)
+    resp = requests.post(url, headers=headers, json=payload, timeout=30)
     if resp.status_code >= 400:
         try:
             err_detail = resp.json().get("error", {}).get("message", resp.text)
