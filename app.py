@@ -55,7 +55,7 @@ def call_claude(api_key, system_prompt, history, user_msg):
 def call_gemini(api_key, system_prompt, history, user_msg):
     # المفاتيح الجديدة (تبدي بـ AQ.) لازم ترسل بترويسة x-goog-api-key
     # مو كباراميتر بالرابط زي المفاتيح القديمة (AIza...)
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     headers = {
         "x-goog-api-key": api_key,
         "Content-Type": "application/json",
