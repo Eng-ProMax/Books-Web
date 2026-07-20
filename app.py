@@ -166,16 +166,13 @@ ai_provider = st.sidebar.selectbox(
     "مزوّد الذكاء الاصطناعي" if AR else "AI Provider",
     ["Claude (via OpenRouter)", "Gemini (Google)"]
 )
-_default_key = get_secret("ANTHROPIC_API_KEY") if ai_provider.startswith("Claude") else get_secret("GEMINI_API_KEY")
-if _default_key:
-    ai_api_key = _default_key
-    st.sidebar.caption("تم العثور على المفتاح بامان من secrets" if AR else "Key found securely in secrets")
+ai_api_key = get_secret("ANTHROPIC_API_KEY") if ai_provider.startswith("Claude") else get_secret("GEMINI_API_KEY")
+if ai_api_key:
+    st.sidebar.caption("تم تحميل المفتاح من secrets بشكل امن" if AR else "Key loaded securely from secrets")
 else:
-    ai_api_key = st.sidebar.text_input(
-        "API Key",
-        type="password",
-        help=("لو Claude، حط مفتاح OpenRouter (يبدأ sk-or-). خزنه بملف secrets.toml حتى ما تعيد كتابته." if AR
-              else "For Claude, use your OpenRouter key (starts with sk-or-). Store it in secrets.toml to avoid retyping it.")
+    st.sidebar.warning(
+        ("ما لكيت المفتاح بـ secrets. اضيف ANTHROPIC_API_KEY او GEMINI_API_KEY بملف .streamlit/secrets.toml" if AR
+         else "No key found in secrets. Add ANTHROPIC_API_KEY or GEMINI_API_KEY to .streamlit/secrets.toml")
     )
 
 themes = {
@@ -353,337 +350,535 @@ else:
     ]
     GREETING = f"Hi {user_name}! I'm {character_name}  I'll be around to chat and help with every field"
 
-# ============== الشخصية المساعدة المتحركة (بدون مكتبات خارجية - مبنية بالكامل يدوياً) ==============
-components.html(f"""
+# ============== الشخصية المساعدة ثلاثية الابعاد (Three.js) ==============
+CHAR_THEME = {
+    "banana":   {"body": "#f4d03f", "accent": "#c68a12", "cheek": "#ff8ea3", "kind": "round"},
+    "shark":    {"body": "#7fb0d1", "accent": "#3d6d8a", "cheek": "#ff8ea3", "kind": "shark"},
+    "duck":     {"body": "#fff2a8", "accent": "#ff9a3c", "cheek": "#ff8ea3", "kind": "duck"},
+    "robot":    {"body": "#c1cbd6", "accent": "#4c6a86", "cheek": "#8fe8ff", "kind": "robot"},
+    "pochacco": {"body": "#ffffff", "accent": "#2a2a2a", "cheek": "#ffb1c1", "kind": "puppy"},
+    "frog":     {"body": "#7fd47f", "accent": "#2e8b57", "cheek": "#ff8ea3", "kind": "frog"},
+}
+_theme = CHAR_THEME.get(character_key, CHAR_THEME["banana"])
+
+_mascot_html = """
 <style>
-  @keyframes floatBounce {{
-    0%, 100% {{ transform: translateY(0); }}
-    50% {{ transform: translateY(-12px); }}
-  }}
-  @keyframes breathe {{
-    0%, 100% {{ transform: scale(1); }}
-    50% {{ transform: scale(1.035); }}
-  }}
-  @keyframes talkBounce {{
-    0%, 100% {{ transform: translateY(0) rotate(-4deg) scale(1); }}
-    50% {{ transform: translateY(-6px) rotate(4deg) scale(1.06); }}
-  }}
-  @keyframes popIn {{
-    0% {{ transform: scale(0.5) translateY(6px); opacity: 0; }}
-    70% {{ transform: scale(1.05) translateY(-2px); opacity: 1; }}
-    100% {{ transform: scale(1) translateY(0); opacity: 1; }}
-  }}
-  @keyframes mascotEntrance {{
-    0% {{ transform: scale(0) rotate(-25deg); opacity: 0; }}
-    60% {{ transform: scale(1.15) rotate(8deg); opacity: 1; }}
-    100% {{ transform: scale(1) rotate(0deg); opacity: 1; }}
-  }}
-  @keyframes jumpHop {{
-    0%, 100% {{ transform: translateY(0) scale(1, 1); }}
-    30% {{ transform: translateY(-26px) scale(0.94, 1.08); }}
-    55% {{ transform: translateY(-26px) scale(1.06, 0.92); }}
-    80% {{ transform: translateY(0) scale(0.96, 1.05); }}
-  }}
-  @keyframes shadowPulse {{
-    0%, 100% {{ transform: scaleX(1); opacity: 0.35; }}
-    50% {{ transform: scaleX(0.7); opacity: 0.18; }}
-  }}
-  @keyframes sparklePop {{
-    0% {{ transform: scale(0) rotate(0deg); opacity: 1; }}
-    100% {{ transform: scale(1.4) rotate(90deg); opacity: 0; }}
-  }}
-  #mascotWrap {{
+  #mascotWrap {
     position: fixed;
-    width: 116px;
-    height: 130px;
+    right: 20px;
+    bottom: 20px;
+    width: 220px;
+    height: 260px;
     z-index: 999999;
     pointer-events: none;
-    transition: left 0.85s cubic-bezier(.34,1.4,.4,1), top 0.85s cubic-bezier(.34,1.4,.4,1);
-    animation: mascotEntrance 0.6s cubic-bezier(.34,1.4,.4,1);
-  }}
-  #mascotStage {{
-    position: relative;
+    font-family: 'Tajawal','Cairo', sans-serif;
+  }
+  #mascotCanvas {
     width: 100%;
-    height: 110px;
-    animation: floatBounce 2.6s ease-in-out infinite;
-    transition: transform 0.85s cubic-bezier(.34,1.4,.4,1);
-  }}
-  #mascotStage.flip {{
-    transform: scaleX(-1);
-  }}
-  #mascotImg {{
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    filter: drop-shadow(0 6px 10px rgba(0,0,0,0.35));
-    animation: breathe 3.4s ease-in-out infinite;
-    transform-origin: center bottom;
-  }}
-  #mascotImg.talking {{
-    animation: talkBounce 0.45s ease-in-out infinite;
-  }}
-  #mascotImg.hop {{
-    animation: jumpHop 0.6s cubic-bezier(.3,1.6,.5,1);
-  }}
-  #mascotShadow {{
+    height: 220px;
+    display: block;
+  }
+  #mascotBubble {
     position: absolute;
-    bottom: -4px;
     left: 50%;
-    width: 60px;
-    height: 14px;
-    margin-left: -30px;
-    background: radial-gradient(ellipse at center, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0) 72%);
-    border-radius: 50%;
-    animation: shadowPulse 2.6s ease-in-out infinite;
-  }}
-  .mascotSparkle {{
-    position: absolute;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: radial-gradient(circle, #fff 0%, rgba(255,255,255,0) 70%);
-    pointer-events: none;
-    animation: sparklePop 0.7s ease-out forwards;
-  }}
-  #mascotBubble {{
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-30%);
-    margin-bottom: 8px;
+    top: -6px;
+    transform: translate(-50%, -100%);
     background: #ffffff;
     color: #2a2a3e;
-    font-family:'Tajawal','Cairo', sans-serif;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
     padding: 10px 14px;
     border-radius: 16px;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
-    white-space: normal;
-    max-width: 240px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.28);
+    max-width: 260px;
     width: max-content;
     text-align: center;
-    animation: popIn 0.3s cubic-bezier(.34,1.6,.4,1);
-  }}
-  #mascotBubble::after {{
-    content:"";
+    display: none;
+    animation: bubblePop 0.28s cubic-bezier(.34,1.6,.4,1);
+  }
+  #mascotBubble::after {
+    content: "";
     position: absolute;
     top: 100%;
-    left: 30%;
-    border-width: 8px;
-    border-style: solid;
-    border-color: #ffffff transparent transparent transparent;
-  }}
+    left: 50%;
+    transform: translateX(-50%);
+    border: 8px solid transparent;
+    border-top-color: #ffffff;
+  }
+  @keyframes bubblePop {
+    0% { transform: translate(-50%, -100%) scale(0.5); opacity: 0; }
+    100% { transform: translate(-50%, -100%) scale(1); opacity: 1; }
+  }
 </style>
 <div id="mascotWrap">
-  <div id="mascotBubble" style="display:none;"></div>
-  <div id="mascotStage">
-    <div id="mascotShadow"></div>
-    <img id="mascotImg" src="" />
-  </div>
+  <div id="mascotBubble"></div>
+  <canvas id="mascotCanvas"></canvas>
 </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
-  const MASCOT_SRC   = {json.dumps(CHAR_IMAGES[character_key])};
-  const CHARACTER_NAME  = {json.dumps(character_name)};
-  const USER_NAME       = {json.dumps(user_name)};
-  const IS_AR           = {json.dumps(AR)};
-  const GREETING        = {json.dumps(GREETING)};
-  const FIELD_HINTS     = {json.dumps(FIELD_HINTS, ensure_ascii=False)};
-  const BUTTON_REACTIONS= {json.dumps(BUTTON_REACTIONS, ensure_ascii=False)};
-  const GENERIC_REACTIONS = {json.dumps(GENERIC_REACTIONS, ensure_ascii=False)};
-  const IDLE_LINES      = {json.dumps(IDLE_LINES, ensure_ascii=False)};
-  const LATEST_AI_REPLY = {json.dumps(st.session_state.latest_ai_reply, ensure_ascii=False)};
+(function(){
+  const THEME           = __THEME__;
+  const CHARACTER_NAME  = __CHAR_NAME__;
+  const USER_NAME       = __USER_NAME__;
+  const IS_AR           = __IS_AR__;
+  const GREETING        = __GREETING__;
+  const FIELD_HINTS     = __FIELD_HINTS__;
+  const BUTTON_REACTIONS= __BUTTON_REACTIONS__;
+  const GENERIC_REACTIONS = __GENERIC_REACTIONS__;
+  const IDLE_LINES      = __IDLE_LINES__;
+  const LATEST_AI_REPLY = __LATEST_AI_REPLY__;
 
+  // اجعل الـ iframe مالك حق النقر شفاف حتى ما يعوق التطبيق
   const frame = window.frameElement;
-  if (frame) {{
-    frame.style.position ='fixed';
-    frame.style.top ='0';
-    frame.style.left ='0';
-    frame.style.width ='100vw';
-    frame.style.height ='100vh';
-    frame.style.zIndex ='999999';
-    frame.style.border ='none';
-    frame.style.pointerEvents ='none';
-    frame.style.background ='transparent';
-  }}
+  if (frame) {
+    frame.style.position = 'fixed';
+    frame.style.right = '0';
+    frame.style.bottom = '0';
+    frame.style.top = 'auto';
+    frame.style.left = 'auto';
+    frame.style.width = '260px';
+    frame.style.height = '300px';
+    frame.style.zIndex = '999999';
+    frame.style.border = 'none';
+    frame.style.pointerEvents = 'none';
+    frame.style.background = 'transparent';
+  }
 
-  const wrap   = document.getElementById('mascotWrap');
-  const stage  = document.getElementById('mascotStage');
-  const img    = document.getElementById('mascotImg');
+  const canvas = document.getElementById('mascotCanvas');
   const bubble = document.getElementById('mascotBubble');
-  img.src = MASCOT_SRC;
   bubble.style.direction = IS_AR ? 'rtl' : 'ltr';
 
-  let pos = {{ x: window.innerWidth - 160, y: window.innerHeight - 200 }};
-  wrap.style.left = pos.x +'px';
-  wrap.style.top  = pos.y +'px';
+  // ---------- Three.js scene ----------
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+  camera.position.set(0, 0.4, 5.2);
+  const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  function resize(){
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  resize();
+  window.addEventListener('resize', resize);
 
-  let hideBubbleTimer = null;
-  function say(text, duration) {{
+  const key = new THREE.DirectionalLight(0xffffff, 0.9);
+  key.position.set(2, 3, 4); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xbcd4ff, 0.35);
+  fill.position.set(-3, 1, 2); scene.add(fill);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+
+  const bodyColor   = new THREE.Color(THEME.body);
+  const accentColor = new THREE.Color(THEME.accent);
+  const cheekColor  = new THREE.Color(THEME.cheek);
+
+  const character = new THREE.Group();
+  scene.add(character);
+
+  // جسم / راس كروي
+  const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.55, metalness: THEME.kind === 'robot' ? 0.6 : 0.05 });
+  const head = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 48), bodyMat);
+  character.add(head);
+
+  // خدود
+  const cheekMat = new THREE.MeshStandardMaterial({ color: cheekColor, roughness: 0.9, transparent: true, opacity: 0.75 });
+  const cheekGeo = new THREE.SphereGeometry(0.16, 16, 16);
+  const cheekL = new THREE.Mesh(cheekGeo, cheekMat); cheekL.position.set(-0.55, -0.05, 0.82); cheekL.scale.set(1, 0.7, 0.3); character.add(cheekL);
+  const cheekR = cheekL.clone(); cheekR.position.x = 0.55; character.add(cheekR);
+
+  // عيون (مقلة بيضاء + بؤبؤ)
+  const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+  const pupilMat    = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2 });
+  const shineMat    = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.6 });
+
+  function makeEye(x){
+    const g = new THREE.Group();
+    const w = new THREE.Mesh(new THREE.SphereGeometry(0.22, 24, 24), eyeWhiteMat);
+    w.scale.set(1, 1.05, 0.7);
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.11, 20, 20), pupilMat);
+    p.position.set(0, 0, 0.15);
+    const s = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 12), shineMat);
+    s.position.set(0.04, 0.05, 0.24);
+    g.add(w); g.add(p); g.add(s);
+    g.position.set(x, 0.22, 0.82);
+    g.userData = { pupil: p, white: w };
+    return g;
+  }
+  const eyeL = makeEye(-0.32);
+  const eyeR = makeEye(0.32);
+  character.add(eyeL); character.add(eyeR);
+
+  // فم (حلقة نصفية) — نستعمل TorusGeometry ونخفي نصفها بتوجيه الزاوية
+  const mouthMat = new THREE.MeshStandardMaterial({ color: 0x3a2a2a, roughness: 0.6 });
+  const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.045, 12, 24, Math.PI), mouthMat);
+  mouth.position.set(0, -0.18, 0.9);
+  mouth.rotation.z = Math.PI;
+  character.add(mouth);
+
+  // لسان/فتحة فم للحديث
+  const openMouth = new THREE.Mesh(
+    new THREE.SphereGeometry(0.14, 20, 20),
+    new THREE.MeshStandardMaterial({ color: 0x2a1416, roughness: 0.4 })
+  );
+  openMouth.position.set(0, -0.22, 0.86);
+  openMouth.scale.set(1, 0.3, 0.5);
+  openMouth.visible = false;
+  character.add(openMouth);
+
+  // ملاحق حسب نوع الشخصية
+  const accentMat = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.5 });
+  if (THEME.kind === 'shark') {
+    const fin = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.55, 4), accentMat);
+    fin.position.set(0, 0.95, -0.1); fin.rotation.x = 0.2; character.add(fin);
+  } else if (THEME.kind === 'duck') {
+    const beak = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.35, 16), accentMat);
+    beak.position.set(0, -0.15, 0.95); beak.rotation.x = Math.PI/2; character.add(beak);
+    mouth.visible = false;
+  } else if (THEME.kind === 'robot') {
+    const antG = new THREE.Group();
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.4,10), accentMat);
+    rod.position.y = 0.2; antG.add(rod);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.09,16,16), new THREE.MeshStandardMaterial({color: 0xff5a7a, emissive: 0xff5a7a, emissiveIntensity: 0.6}));
+    ball.position.y = 0.45; antG.add(ball);
+    antG.position.set(0, 0.9, 0);
+    character.add(antG);
+  } else if (THEME.kind === 'frog') {
+    const bump = new THREE.SphereGeometry(0.28, 20, 20);
+    const bL = new THREE.Mesh(bump, bodyMat); bL.position.set(-0.35, 0.75, 0.35); bL.scale.set(0.9,0.7,0.9); character.add(bL);
+    const bR = bL.clone(); bR.position.x = 0.35; character.add(bR);
+  } else if (THEME.kind === 'puppy') {
+    const earGeo = new THREE.SphereGeometry(0.28, 20, 20);
+    const earMat = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.55 });
+    const eL = new THREE.Mesh(earGeo, earMat); eL.position.set(-0.75, 0.55, 0.1); eL.scale.set(0.7,1.05,0.5); eL.rotation.z = 0.5; character.add(eL);
+    const eR = eL.clone(); eR.position.x = 0.75; eR.rotation.z = -0.5; character.add(eR);
+  } else {
+    // round (banana): وريقة صغيرة اعلى الراس
+    const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.3, 12), new THREE.MeshStandardMaterial({color: 0x4caf50}));
+    leaf.position.set(0.05, 1.02, 0); leaf.rotation.z = -0.5; character.add(leaf);
+  }
+
+  // ذراعان بسيطتان (كرات صغيرة) للـ wave/point
+  const armMat = bodyMat;
+  const armL = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 20), armMat);
+  armL.scale.set(0.7, 1.4, 0.7);
+  armL.position.set(-1.0, -0.25, 0.15);
+  character.add(armL);
+  const armR = armL.clone(); armR.position.x = 1.0; character.add(armR);
+
+  // ---------- Emotion + Pose system ----------
+  const state = {
+    expr: 'happy',
+    pose: 'idle',
+    talking: false,
+    talkUntil: 0,
+    poseUntil: 0,
+    lookX: 0, lookY: 0,
+    targetLookX: 0, targetLookY: 0,
+    blinkTimer: 0,
+    blinkPhase: 0,
+    hopPhase: 0,
+    wavePhase: 0,
+    spinPhase: 0,
+    baseRotY: 0,
+    targetRotY: 0
+  };
+
+  function setExpression(name){
+    state.expr = name;
+    // reset scales
+    eyeL.userData.white.scale.set(1, 1.05, 0.7);
+    eyeR.userData.white.scale.set(1, 1.05, 0.7);
+    eyeL.userData.pupil.scale.set(1,1,1);
+    eyeR.userData.pupil.scale.set(1,1,1);
+    mouth.scale.set(1,1,1);
+    mouth.rotation.z = Math.PI; // فم مبتسم (نصف حلقة مقلوبة)
+    mouth.position.y = -0.18;
+    if (THEME.kind !== 'duck') mouth.visible = true;
+    openMouth.visible = false;
+    cheekL.material.opacity = 0.75; cheekR.material.opacity = 0.75;
+
+    if (name === 'excited') {
+      eyeL.userData.pupil.scale.set(1.25,1.25,1);
+      eyeR.userData.pupil.scale.set(1.25,1.25,1);
+      cheekL.material.opacity = 1.0; cheekR.material.opacity = 1.0;
+      mouth.scale.set(1.3,1.2,1);
+    } else if (name === 'thinking') {
+      mouth.scale.set(0.4, 0.7, 1); mouth.rotation.z = 0; mouth.position.y = -0.15;
+      eyeL.userData.pupil.position.x = -0.05;
+      eyeR.userData.pupil.position.x = -0.05;
+    } else if (name === 'surprised') {
+      eyeL.userData.white.scale.set(1.3, 1.3, 0.7);
+      eyeR.userData.white.scale.set(1.3, 1.3, 0.7);
+      mouth.rotation.z = 0; mouth.scale.set(0.6, 1.1, 1);
+    } else if (name === 'wink') {
+      eyeL.userData.white.scale.set(1, 0.1, 0.7);
+      eyeL.userData.pupil.scale.set(1, 0.1, 1);
+    } else if (name === 'sleepy') {
+      eyeL.userData.white.scale.set(1, 0.35, 0.7);
+      eyeR.userData.white.scale.set(1, 0.35, 0.7);
+      mouth.scale.set(0.6, 0.6, 1);
+    } else if (name === 'sad') {
+      mouth.rotation.z = 0; mouth.scale.set(0.9, 0.8, 1); mouth.position.y = -0.28;
+    } else {
+      // happy default
+    }
+    if (name !== 'thinking') {
+      eyeL.userData.pupil.position.x = 0;
+      eyeR.userData.pupil.position.x = 0;
+    }
+  }
+
+  function triggerPose(name, dur){
+    state.pose = name;
+    state.poseUntil = performance.now() + (dur || 900);
+    state.hopPhase = 0; state.wavePhase = 0; state.spinPhase = 0;
+    if (name === 'spin') state.targetRotY = state.baseRotY + Math.PI * 2;
+    if (name === 'nod')  state.targetRotY = state.baseRotY;
+    if (name === 'shake') state.targetRotY = state.baseRotY;
+  }
+
+  const EXPRESSIONS = ['happy','excited','wink','surprised','thinking','sleepy'];
+  const POSES       = ['hop','wave','spin','nod','dance','point'];
+  function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+  function say(text, duration){
     if (!text) return;
-    clearTimeout(hideBubbleTimer);
     bubble.textContent = text;
-    bubble.style.display ='block';
-    img.classList.add('talking');
-    hideBubbleTimer = setTimeout(() => {{
-      bubble.style.display ='none';
-      img.classList.remove('talking');
-    }}, duration || 3200);
-  }}
+    bubble.style.display = 'block';
+    state.talking = true;
+    state.talkUntil = performance.now() + (duration || 3200);
+  }
+  function reactRandom(kind){
+    // kind: 'click' | 'field' | 'idle' | 'love'
+    if (kind === 'click') {
+      setExpression(pick(['excited','happy','wink','surprised']));
+      triggerPose(pick(['hop','wave','spin','dance','point','nod']), 1100);
+    } else if (kind === 'field') {
+      setExpression('thinking');
+      triggerPose('nod', 700);
+    } else if (kind === 'love') {
+      setExpression('excited');
+      triggerPose('dance', 1400);
+    } else {
+      setExpression(pick(EXPRESSIONS));
+      triggerPose(pick(POSES), 900);
+    }
+  }
 
-  function burstSparkles(count) {{
-    for (let i = 0; i < count; i++) {{
-      const s = document.createElement('div');
-      s.className = 'mascotSparkle';
-      const angle = Math.random() * Math.PI * 2;
-      const dist = 24 + Math.random() * 26;
-      s.style.left = (55 + Math.cos(angle) * dist) +'px';
-      s.style.top  = (55 + Math.sin(angle) * dist) +'px';
-      s.style.animationDelay = (Math.random() * 0.15) +'s';
-      stage.appendChild(s);
-      setTimeout(() => s.remove(), 800);
-    }}
-  }}
+  // ---------- animation loop ----------
+  const clock = new THREE.Clock();
+  function animate(){
+    const dt = clock.getDelta();
+    const t  = clock.elapsedTime;
+    const now = performance.now();
 
-  function hop() {{
-    img.classList.remove('hop');
-    void img.offsetWidth;
-    img.classList.add('hop');
-    burstSparkles(5);
-    setTimeout(() => img.classList.remove('hop'), 650);
-  }}
+    // نظرة العيون تتبع الهدف
+    state.lookX += (state.targetLookX - state.lookX) * Math.min(1, dt*6);
+    state.lookY += (state.targetLookY - state.lookY) * Math.min(1, dt*6);
+    if (state.expr !== 'thinking') {
+      eyeL.userData.pupil.position.x = state.lookX * 0.06;
+      eyeR.userData.pupil.position.x = state.lookX * 0.06;
+      eyeL.userData.pupil.position.y = state.lookY * 0.05;
+      eyeR.userData.pupil.position.y = state.lookY * 0.05;
+    }
 
-  function faceTowards(newX) {{
-    if (newX < pos.x - 4) {{
-      stage.classList.add('flip');
-    }} else if (newX > pos.x + 4) {{
-      stage.classList.remove('flip');
-    }}
-  }}
+    // رمش تلقائي
+    state.blinkTimer -= dt;
+    if (state.blinkTimer <= 0) { state.blinkPhase = 0.18; state.blinkTimer = 2.5 + Math.random()*3; }
+    if (state.blinkPhase > 0) {
+      state.blinkPhase -= dt;
+      const s = Math.max(0.1, state.blinkPhase / 0.18);
+      if (state.expr !== 'wink' && state.expr !== 'sleepy') {
+        eyeL.userData.white.scale.y = 1.05 * s;
+        eyeR.userData.white.scale.y = 1.05 * s;
+      }
+    }
 
-  function moveNear(x, y) {{
-    const tx = Math.min(Math.max(x - 55, 10), window.innerWidth - 130);
-    const ty = Math.min(Math.max(y - 150, 10), window.innerHeight - 130);
-    faceTowards(tx);
-    pos = {{ x: tx, y: ty }};
-    wrap.style.left = pos.x +'px';
-    wrap.style.top  = pos.y +'px';
-    hop();
-  }}
+    // تنفس + طفو
+    const breathe = 1 + Math.sin(t*2) * 0.03;
+    character.scale.set(breathe, breathe, breathe);
+    character.position.y = Math.sin(t*1.5) * 0.08;
 
-  function randomPoint() {{
-    return {{
-      x: 30 + Math.random() * (window.innerWidth - 160),
-      y: 80 + Math.random() * (window.innerHeight - 220)
-    }};
-  }}
+    // دوران ناعم للراس
+    state.baseRotY = Math.sin(t*0.6) * 0.25 + state.lookX * 0.15;
+    let rotY = state.baseRotY;
+    let rotX = -state.lookY * 0.15;
+    let posY = character.position.y;
+    let posX = 0;
 
-  function pick(arr) {{
-    return arr[Math.floor(Math.random() * arr.length)];
-  }}
+    // انيميشن الوضعيات
+    if (now < state.poseUntil) {
+      const p = 1 - (state.poseUntil - now) / 900;
+      if (state.pose === 'hop') {
+        posY += Math.sin(p * Math.PI) * 0.7;
+      } else if (state.pose === 'wave') {
+        armR.rotation.z = -Math.sin(p * Math.PI * 4) * 1.1 - 0.5;
+        armR.position.y = -0.05;
+      } else if (state.pose === 'spin') {
+        rotY = state.baseRotY + p * Math.PI * 2;
+      } else if (state.pose === 'nod') {
+        rotX += Math.sin(p * Math.PI * 3) * 0.35;
+      } else if (state.pose === 'dance') {
+        posX = Math.sin(p * Math.PI * 4) * 0.35;
+        rotY = state.baseRotY + Math.sin(p * Math.PI * 4) * 0.4;
+        posY += Math.abs(Math.sin(p * Math.PI * 6)) * 0.2;
+      } else if (state.pose === 'point') {
+        armR.rotation.z = -1.2;
+        armR.position.set(1.2, 0.15, 0.4);
+      }
+    } else {
+      // ارجاع الاذرع للوضع الافتراضي بسلاسة
+      armR.rotation.z += (0 - armR.rotation.z) * Math.min(1, dt*6);
+      armL.rotation.z += (0 - armL.rotation.z) * Math.min(1, dt*6);
+      armR.position.x += (1.0 - armR.position.x) * Math.min(1, dt*6);
+      armR.position.y += (-0.25 - armR.position.y) * Math.min(1, dt*6);
+      state.pose = 'idle';
+    }
 
-  // ---- automatic roaming + idle chatter ----
-  let roamTimer = setInterval(() => {{
-    const p = randomPoint();
-    faceTowards(p.x);
-    pos = p;
-    wrap.style.left = p.x +'px';
-    wrap.style.top  = p.y +'px';
-    hop();
-    if (Math.random() < 0.6) {{
-      say(pick(IDLE_LINES), 3500);
-    }}
-  }}, 7000);
+    character.rotation.y = rotY;
+    character.rotation.x = rotX;
+    character.position.x = posX;
+    character.position.y = posY;
 
-  // ---- تنظيف المستمعين القدامى (يصير Rerun بالـ Streamlit كل تغيير) ----
-  try {{
+    // كلام: يفتح ويقفل الفم
+    if (state.talking) {
+      if (now >= state.talkUntil) {
+        state.talking = false;
+        bubble.style.display = 'none';
+        openMouth.visible = false;
+        if (THEME.kind !== 'duck') mouth.visible = true;
+      } else {
+        const open = (Math.sin(t*22) + 1) * 0.5;
+        if (THEME.kind !== 'duck') {
+          openMouth.visible = true;
+          openMouth.scale.set(1, 0.15 + open*0.4, 0.5);
+          mouth.visible = false;
+        }
+      }
+    }
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+  setExpression('happy');
+  animate();
+
+  // ---------- التفاعل مع صفحة Streamlit ----------
+  function lookAtScreenPoint(x, y){
+    // خذ نقطة داخل الشاشة وحوّلها لاتجاه نظر (-1..1)
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    state.targetLookX = Math.max(-1, Math.min(1, (x - cx) / cx));
+    state.targetLookY = Math.max(-1, Math.min(1, -(y - cy) / cy));
+  }
+
+  try {
     const parentWin = window.parent;
-    if (parentWin.__mascotClickHandler) {{
-      parentWin.document.removeEventListener('click', parentWin.__mascotClickHandler, true);
-    }}
-    if (parentWin.__mascotFocusHandler) {{
-      parentWin.document.removeEventListener('focusin', parentWin.__mascotFocusHandler, true);
-    }}
-    if (parentWin.__mascotInputHandler) {{
-      parentWin.document.removeEventListener('input', parentWin.__mascotInputHandler, true);
-    }}
-    if (parentWin.__mascotMouseHandler) {{
-      parentWin.document.removeEventListener('mousedown', parentWin.__mascotMouseHandler, true);
-    }}
+    if (parentWin.__mascot3DClick)  parentWin.document.removeEventListener('click',   parentWin.__mascot3DClick, true);
+    if (parentWin.__mascot3DFocus)  parentWin.document.removeEventListener('focusin', parentWin.__mascot3DFocus, true);
+    if (parentWin.__mascot3DInput)  parentWin.document.removeEventListener('input',   parentWin.__mascot3DInput, true);
+    if (parentWin.__mascot3DMouse)  parentWin.document.removeEventListener('mousedown', parentWin.__mascot3DMouse, true);
+    if (parentWin.__mascot3DMove)   parentWin.document.removeEventListener('mousemove', parentWin.__mascot3DMove, true);
 
-    function findLabelText(el) {{
+    function findLabelText(el){
       let node = el;
-      for (let i = 0; i < 6 && node; i++) {{
-        if (node.querySelector) {{
+      for (let i=0; i<6 && node; i++){
+        if (node.querySelector){
           const lbl = node.querySelector('label, [data-testid="stWidgetLabel"]');
-          if (lbl && lbl.textContent && lbl.textContent.trim().length > 0) {{
-            return lbl.textContent.trim();
-          }}
-        }}
+          if (lbl && lbl.textContent && lbl.textContent.trim().length > 0) return lbl.textContent.trim();
+        }
         node = node.parentElement;
-      }}
-      return'';
-    }}
+      }
+      return '';
+    }
 
-    function reactToField(el) {{
-      const txt = findLabelText(el);
-      if (!txt || !FIELD_HINTS[txt]) return;
-      const rect = el.getBoundingClientRect();
-      moveNear(rect.left + rect.width / 2, rect.top);
-      say(pick(FIELD_HINTS[txt]), 3800);
-    }}
-
-    function reactToClick(e) {{
-      const btn = e.target.closest('button, a, [role="button"]');
+    parentWin.__mascot3DClick = function(e){
+      const btn = e.target.closest('button, a, [role="button"], [data-testid="stDownloadButton"] button, [data-testid="baseButton-secondary"], [data-testid="baseButton-primary"]');
       if (!btn) return;
-      const txt = (btn.textContent ||'').trim();
+      const txt = (btn.textContent || '').trim();
       const rect = btn.getBoundingClientRect();
-      moveNear(rect.left + rect.width / 2, rect.top);
+      lookAtScreenPoint(rect.left + rect.width/2, rect.top + rect.height/2);
       const pool = BUTTON_REACTIONS[txt] && BUTTON_REACTIONS[txt].length ? BUTTON_REACTIONS[txt] : GENERIC_REACTIONS;
-      say(pick(pool), 3800);
-    }}
+      reactRandom('click');
+      say(pool[Math.floor(Math.random()*pool.length)], 3600);
+    };
 
     let lastFieldReact = 0;
-    function throttledFieldReact(e) {{
+    parentWin.__mascot3DFocus = function(e){
       const now = Date.now();
       if (now - lastFieldReact < 900) return;
       lastFieldReact = now;
-      reactToField(e.target);
-    }}
+      const txt = findLabelText(e.target);
+      const rect = e.target.getBoundingClientRect ? e.target.getBoundingClientRect() : null;
+      if (rect) lookAtScreenPoint(rect.left + rect.width/2, rect.top);
+      if (txt && FIELD_HINTS[txt]) {
+        reactRandom('field');
+        const arr = FIELD_HINTS[txt];
+        say(arr[Math.floor(Math.random()*arr.length)], 3600);
+      }
+    };
+    parentWin.__mascot3DInput = parentWin.__mascot3DFocus;
 
-    parentWin.__mascotClickHandler = reactToClick;
-    parentWin.__mascotFocusHandler = throttledFieldReact;
-    parentWin.__mascotInputHandler = throttledFieldReact;
-    parentWin.__mascotMouseHandler = function(e) {{
+    parentWin.__mascot3DMouse = function(e){
       const el = e.target.closest('[role="combobox"], [role="slider"], [data-baseweb="select"], [data-testid="stColorPicker"]');
-      if (el) throttledFieldReact({{ target: el }});
-    }};
+      if (el) parentWin.__mascot3DFocus({ target: el });
+    };
 
-    parentWin.document.addEventListener('click', parentWin.__mascotClickHandler, true);
-    parentWin.document.addEventListener('focusin', parentWin.__mascotFocusHandler, true);
-    parentWin.document.addEventListener('input', parentWin.__mascotInputHandler, true);
-    parentWin.document.addEventListener('mousedown', parentWin.__mascotMouseHandler, true);
+    parentWin.__mascot3DMove = function(e){
+      lookAtScreenPoint(e.clientX, e.clientY);
+    };
 
-    // ترحيب مرة وحدة لكل مجموعة (شخصية + اسمها + اسم المستخدم)
-    const comboKey = MASCOT_SRC.slice(0, 40) +'|' + CHARACTER_NAME +'|' + USER_NAME;
-    if (parentWin.__mascotLastCombo !== comboKey) {{
-      parentWin.__mascotLastCombo = comboKey;
-      setTimeout(() => say(GREETING, 4200), 400);
-    }}
+    parentWin.document.addEventListener('click',     parentWin.__mascot3DClick, true);
+    parentWin.document.addEventListener('focusin',   parentWin.__mascot3DFocus, true);
+    parentWin.document.addEventListener('input',     parentWin.__mascot3DInput, true);
+    parentWin.document.addEventListener('mousedown', parentWin.__mascot3DMouse, true);
+    parentWin.document.addEventListener('mousemove', parentWin.__mascot3DMove, true);
 
-    // ---- عرض آخر رد من المساعد الذكي بفقاعة الشخصية ----
-    if (LATEST_AI_REPLY && parentWin.__mascotLastAIReply !== LATEST_AI_REPLY) {{
-      parentWin.__mascotLastAIReply = LATEST_AI_REPLY;
-      setTimeout(() => {{
-        moveNear(window.innerWidth / 2, window.innerHeight / 2);
-        say(LATEST_AI_REPLY, 6500);
-      }}, 350);
-    }}
-  }} catch (err) {{
-    console.warn('mascot: could not attach to parent document', err);
-  }}
+    // ترحيب
+    const comboKey = (THEME.body||'') + '|' + CHARACTER_NAME + '|' + USER_NAME;
+    if (parentWin.__mascot3DGreeted !== comboKey) {
+      parentWin.__mascot3DGreeted = comboKey;
+      setTimeout(() => { reactRandom('love'); say(GREETING, 4200); }, 500);
+    }
+
+    // ردود المساعد الذكي
+    if (LATEST_AI_REPLY && parentWin.__mascot3DLastAI !== LATEST_AI_REPLY) {
+      parentWin.__mascot3DLastAI = LATEST_AI_REPLY;
+      setTimeout(() => { setExpression('excited'); triggerPose('nod', 1200); say(LATEST_AI_REPLY, 6500); }, 300);
+    }
+
+    // ثرثرة تلقائية
+    setInterval(() => {
+      if (state.talking) return;
+      reactRandom('idle');
+      say(IDLE_LINES[Math.floor(Math.random()*IDLE_LINES.length)], 3200);
+    }, 9000);
+
+  } catch (err) {
+    console.warn('mascot3D: parent attach failed', err);
+  }
+})();
 </script>
-""", height=0)
+"""
+
+_replacements = {
+    "__THEME__":            json.dumps(_theme),
+    "__CHAR_NAME__":        json.dumps(character_name),
+    "__USER_NAME__":        json.dumps(user_name),
+    "__IS_AR__":            json.dumps(AR),
+    "__GREETING__":         json.dumps(GREETING, ensure_ascii=False),
+    "__FIELD_HINTS__":      json.dumps(FIELD_HINTS, ensure_ascii=False),
+    "__BUTTON_REACTIONS__": json.dumps(BUTTON_REACTIONS, ensure_ascii=False),
+    "__GENERIC_REACTIONS__":json.dumps(GENERIC_REACTIONS, ensure_ascii=False),
+    "__IDLE_LINES__":       json.dumps(IDLE_LINES, ensure_ascii=False),
+    "__LATEST_AI_REPLY__":  json.dumps(st.session_state.latest_ai_reply, ensure_ascii=False),
+}
+for _k, _v in _replacements.items():
+    _mascot_html = _mascot_html.replace(_k, _v)
+
+components.html(_mascot_html, height=0)
+
 
 # title
 title_text ="أداة استخراج بيانات الكتب" if AR else"Book Data Scraper"
