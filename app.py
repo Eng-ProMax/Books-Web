@@ -8,7 +8,6 @@ import json
 import openpyxl
 from openpyxl import Workbook
 import streamlit.components.v1 as components
-pip install streamlit
 
 # ==============================================================================
 # 1. إعدادات المفتاح وتفاعل الشخصية (الربط الذكي)
